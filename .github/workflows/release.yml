@@ -3,24 +3,34 @@ name: Auto Release from version.txt
 on:
   push:
     branches:
-      - main  # default branch
+      - main
     paths:
-      - version.txt  # only trigger when version.txt changes
+      - version.txt
 
 jobs:
   release:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Read version from file
+      - name: Read version from version.txt
         id: get_version
         run: |
           VERSION=$(cat version.txt | tr -d '\n')
           echo "VERSION=$VERSION" >> $GITHUB_ENV
 
-      - name: Create GitHub release
+      - name: Create Git tag
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git tag ${{ env.VERSION }}
+          git push origin ${{ env.VERSION }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.VERSION }}
@@ -30,10 +40,12 @@ jobs:
           draft: false
           prerelease: false
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
 
-      - name: Upload data to Zenodo
-        uses: actions/upload-artifact@v4
+      - name: Upload processed data to GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: cnv-data-${{ env.VERSION }}
-          path: data/processed/
+          tag_name: ${{ env.VERSION }}
+          files: data/processed/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
