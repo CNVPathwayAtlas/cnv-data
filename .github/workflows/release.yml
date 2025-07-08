@@ -21,10 +21,11 @@ jobs:
           VERSION=$(cat version.txt | tr -d '\n')
           echo "VERSION=$VERSION" >> $GITHUB_ENV
 
-      - name: Create Git tag
+      - name: Set git push authentication
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
+          git remote set-url origin https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ github.repository }}.git
           git tag ${{ env.VERSION }}
           git push origin ${{ env.VERSION }}
         env:
