@@ -8,61 +8,39 @@ on:
       - version.txt
 
 jobs:
-  release:
+  create-release:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
+      - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Read version from version.txt
+      - name: Get version from version.txt
         id: get_version
         run: |
-          VERSION=$(cat version.txt | tr -d '\n')
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          version=$(cat version.txt | tr -d '\n')
+          echo "version=$version" >> $GITHUB_OUTPUT
 
-      - name: Configure Git identity
+      - name: Setup git user
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
 
-      - name: Debug local and remote tags
+      - name: Create git tag if not exists
         run: |
-          echo "Local tags:"
-          git tag
-          echo "Remote tags:"
-          git ls-remote --tags origin || true
-
-      - name: Create and push Git tag (only if it doesn't exist)
-        run: |
-          echo "Checking if tag '${{ env.VERSION }}' exists remotely..."
-          if git ls-remote --tags origin | grep "refs/tags/${{ env.VERSION }}" >/dev/null; then
-            echo "Tag '${{ env.VERSION }}' already exists on remote. Skipping tag creation."
+          if git rev-parse "refs/tags/${{ steps.get_version.outputs.version }}" >/dev/null 2>&1
+          then
+            echo "Tag ${{ steps.get_version.outputs.version }} already exists"
           else
-            echo "Creating and pushing tag '${{ env.VERSION }}'"
-            git tag ${{ env.VERSION }}
-            git push origin ${{ env.VERSION }}
+            git tag ${{ steps.get_version.outputs.version }}
+            git push origin ${{ steps.get_version.outputs.version }}
           fi
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Create GitHub Release
+      - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ env.VERSION }}
-          name: Release ${{ env.VERSION }}
-          body: |
-            Automated release for data version `${{ env.VERSION }}`
-          draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload processed data to GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ env.VERSION }}
-          files: data/processed/*
+          tag_name: ${{ steps.get_version.outputs.version }}
+          name: Release ${{ steps.get_version.outputs.version }}
+          body: Automated release for version ${{ steps.get_version.outputs.version }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
