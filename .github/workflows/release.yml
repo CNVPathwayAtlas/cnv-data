@@ -22,19 +22,30 @@ jobs:
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-      - name: Configure Git
+      - name: Configure Git identity
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
 
-      - name: Create Git tag if it doesn't exist
+      - name: Debug local and remote tags
         run: |
-          if git rev-parse "refs/tags/${{ env.VERSION }}" >/dev/null 2>&1; then
-            echo "Tag ${{ env.VERSION }} already exists. Skipping tag creation."
+          echo "Local tags:"
+          git tag
+          echo "Remote tags:"
+          git ls-remote --tags origin || true
+
+      - name: Create and push Git tag (only if it doesn't exist)
+        run: |
+          echo "Checking if tag '${{ env.VERSION }}' exists remotely..."
+          if git ls-remote --tags origin | grep "refs/tags/${{ env.VERSION }}" >/dev/null; then
+            echo "Tag '${{ env.VERSION }}' already exists on remote. Skipping tag creation."
           else
+            echo "Creating and pushing tag '${{ env.VERSION }}'"
             git tag ${{ env.VERSION }}
             git push origin ${{ env.VERSION }}
           fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
