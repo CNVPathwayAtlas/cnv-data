@@ -27,10 +27,10 @@ jobs:
           # git config alexandra-valeanu "github-actions"
           # git config valeanualexandra17@gmail.com "github-actions@github.com"
 
-      - name: Force create/update annotated git tag
-        run: |
-          git tag -fa "${{ steps.get_version.outputs.version }}" -m "Release ${{ steps.get_version.outputs.version }}"
-          git push origin -f "${{ steps.get_version.outputs.version }}"
+      # - name: Force create/update annotated git tag
+        # run: |
+          # git tag -fa "${{ steps.get_version.outputs.version }}" -m "Release ${{ steps.get_version.outputs.version }}"
+          # git push origin -f "${{ steps.get_version.outputs.version }}"
 
       - name: Create or update GitHub release
         uses: softprops/action-gh-release@v2
