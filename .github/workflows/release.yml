@@ -1,6 +1,7 @@
 name: Auto Release from version.txt
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
