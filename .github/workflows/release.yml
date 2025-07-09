@@ -15,16 +15,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # - name: Get version from version.txt
-        # id: get_version
-        # run: |
-          # version=$(awk '{$1=$1};1' version.txt)
-          # echo "version=$version" >> $GITHUB_OUTPUT
-
-      - name: Setup git user
+      - name: Get version from version.txt
+        id: get_version
         run: |
-          git config alexandra-valeanu "github-actions"
-          git config valeanualexandra17@gmail.com "github-actions@github.com"
+          version=$(awk '{$1=$1};1' version.txt)
+          echo "version=$version" >> $GITHUB_OUTPUT
+
+      # - name: Setup git user
+        # run: |
+          # git config alexandra-valeanu "github-actions"
+          # git config valeanualexandra17@gmail.com "github-actions@github.com"
 
       - name: Force create/update annotated git tag
         run: |
