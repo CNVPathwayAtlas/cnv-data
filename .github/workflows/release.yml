@@ -18,28 +18,26 @@ jobs:
       - name: Get version from version.txt
         id: get_version
         run: |
-          version=$(cat version.txt | tr -d '\n')
+          version=$(awk '{$1=$1};1' version.txt)
           echo "version=$version" >> $GITHUB_OUTPUT
 
       - name: Setup git user
         run: |
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
+          git config alexandra-valeanu "github-actions"
+          git config valeanualexandra17@gmail.com "github-actions@github.com"
 
-      - name: Create git tag if it doesn't exist
+      - name: Force create/update annotated git tag
         run: |
-          if git rev-parse "refs/tags/${{ steps.get_version.outputs.version }}" >/dev/null 2>&1; then
-            echo "Tag ${{ steps.get_version.outputs.version }} already exists"
-          else
-            git tag ${{ steps.get_version.outputs.version }}
-            git push origin ${{ steps.get_version.outputs.version }}
-          fi
+          git tag -fa "${{ steps.get_version.outputs.version }}" -m "Release ${{ steps.get_version.outputs.version }}"
+          git push origin -f "${{ steps.get_version.outputs.version }}"
 
-      - name: Create GitHub release
+      - name: Create or update GitHub release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.get_version.outputs.version }}
           name: Release ${{ steps.get_version.outputs.version }}
           body: Automated release for version ${{ steps.get_version.outputs.version }}
+          draft: false
+          prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

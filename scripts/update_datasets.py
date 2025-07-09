@@ -23,15 +23,27 @@ ORPHADATA_FILES = {
 # HGNC TSV URL
 HGNC_URL = "https://storage.googleapis.com/public-download-files/hgnc/tsv/tsv/hgnc_complete_set.txt"
 
+# Excel input file containing Orphacodes column
+EXCEL_FILE = os.path.join(INPUT_DIR, "cnv_data.xlsx")
+
 def ensure_dirs():
     os.makedirs(DATA_PROCESSED_DIR, exist_ok=True)
     os.makedirs(DATA_LATEST_DIR, exist_ok=True)
     os.makedirs(INPUT_DIR, exist_ok=True)
 
-def load_orphacodes():
-    path = os.path.join(INPUT_DIR, "orphacodes.txt")
-    with open(path) as f:
-        return set(line.strip() for line in f if line.strip())
+# Extract orphacodes
+def load_orphacodes_from_excel():
+    df = pd.read_excel(EXCEL_FILE, engine='openpyxl')
+    orphacodes = set()
+    pattern = re.compile(r"^(\d+)") 
+
+    for entry in df['Orphacodes'].dropna():
+        parts = [code.strip() for code in str(entry).split(",")]
+        for part in parts:
+            match = pattern.match(part)
+            if match:
+                orphacodes.add(match.group(1))
+    return orphacodes
 
 # Orphadata Parsing Functions
 def parse_definitions(path, orphacodes):
@@ -173,7 +185,7 @@ def clean_latest_dir():
 # Main 
 def main():
     ensure_dirs()
-    orphacodes = load_orphacodes()
+    orphacodes = load_orphacodes_from_excel()
 
     with tempfile.TemporaryDirectory() as tmpdir:
         print(f"Using temporary directory: {tmpdir}")
@@ -208,7 +220,7 @@ def main():
     hgnc_out_path = os.path.join(DATA_PROCESSED_DIR, f"hgnc_filtered_{today}.csv")
     save_hgnc(filtered_hgnc, hgnc_out_path)
 
-    # Clean previous versions in the /lastest folder
+    # Clean previous versions in the /latest folder
     clean_latest_dir()
 
     # Update latest symlinks

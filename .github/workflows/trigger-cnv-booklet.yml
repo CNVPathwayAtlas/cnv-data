@@ -1,0 +1,17 @@
+name: Trigger cnv-booklet YAML rebuild
+
+on:
+  push:
+    paths:
+      - 'data/input/cnv_data.xlsx'
+
+jobs:
+  notify-cnv-booklet:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger cnv-booklet via repository_dispatch
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.CNV_BOOKLET_PAT }}
+          repository: alexandra-valeanu/cnv-booklet
+          event-type: cnv-data-updated
