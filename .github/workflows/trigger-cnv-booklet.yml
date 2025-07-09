@@ -1,6 +1,7 @@
 name: Trigger cnv-booklet YAML rebuild
 
 on:
+  workflow_dispatch:
   push:
     paths:
       - 'data/input/cnv_data.xlsx'
