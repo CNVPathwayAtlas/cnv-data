@@ -12,6 +12,6 @@ jobs:
       - name: Trigger cnv-booklet via repository_dispatch
         uses: peter-evans/repository-dispatch@v3
         with:
-          token: ${{ secrets.CNV_BOOKLET_PAT }}
+          token: ${{ secrets.CNV_AUTOMATION }}
           repository: alexandra-valeanu/cnv-booklet
           event-type: cnv-data-updated
