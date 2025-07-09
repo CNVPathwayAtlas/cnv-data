@@ -15,11 +15,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Get version from version.txt
-        id: get_version
-        run: |
-          version=$(awk '{$1=$1};1' version.txt)
-          echo "version=$version" >> $GITHUB_OUTPUT
+      # - name: Get version from version.txt
+        # id: get_version
+        # run: |
+          # version=$(awk '{$1=$1};1' version.txt)
+          # echo "version=$version" >> $GITHUB_OUTPUT
 
       - name: Setup git user
         run: |
