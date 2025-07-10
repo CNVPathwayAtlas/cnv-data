@@ -10,7 +10,7 @@ import datetime
 # Directories
 DATA_PROCESSED_DIR = os.path.join("data", "processed")
 DATA_LATEST_DIR = os.path.join("data", "latest")
-INPUT_DIR = "input"
+INPUT_DIR = os.path.join("data", "input")
 VERSION_FILE = "version.txt"
 
 # Orphadata URLs
@@ -171,10 +171,20 @@ def write_version_file(version):
         f.write(version)
 
 def update_symlink(src_path, symlink_dir):
+    os.makedirs(symlink_dir, exist_ok=True)
+
+    # Make both paths absolute first
+    src_path = os.path.abspath(src_path)
+    symlink_dir = os.path.abspath(symlink_dir)
     symlink_path = os.path.join(symlink_dir, os.path.basename(src_path))
+
+    # Compute relative path
+    relative_src = os.path.relpath(src_path, symlink_dir)
+
     if os.path.islink(symlink_path) or os.path.exists(symlink_path):
         os.remove(symlink_path)
-    os.symlink(os.path.abspath(src_path), symlink_path)
+
+    os.symlink(relative_src, symlink_path)
 
 def clean_latest_dir():
     for filename in os.listdir(DATA_LATEST_DIR):
