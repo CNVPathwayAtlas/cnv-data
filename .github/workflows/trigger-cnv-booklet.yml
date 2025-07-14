@@ -3,8 +3,10 @@ name: Trigger cnv-booklet YAML rebuild
 on:
   workflow_dispatch:
   push:
+    branches:
+      - main
     paths:
-      - 'data/input/cnv_data.xlsx'
+      - version.txt
 
 jobs:
   notify-cnv-booklet:
