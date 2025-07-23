@@ -154,6 +154,7 @@ def download_hgnc(tmpdir):
 def filter_hgnc(hgnc_path):
     df = pd.read_csv(hgnc_path, sep="\t", dtype=str)
     columns_of_interest = [
+        "hgnc_id",
         "symbol",
         "name",
         "entrez_id",
