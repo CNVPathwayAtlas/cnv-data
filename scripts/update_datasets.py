@@ -37,7 +37,7 @@ def load_orphacodes_from_excel():
     orphacodes = set()
     pattern = re.compile(r"^(\d+)") 
 
-    for entry in df['Orphacodes'].dropna():
+    for entry in df['orphacodes'].dropna():
         parts = [code.strip() for code in str(entry).split(",")]
         for part in parts:
             match = pattern.match(part)
@@ -45,7 +45,7 @@ def load_orphacodes_from_excel():
                 orphacodes.add(match.group(1))
     return orphacodes
 
-# Orphadata Parsing Functions
+# Orphadata parsing functions
 def parse_definitions(path, orphacodes):
     root = ET.parse(path).getroot()
     data = {}
