@@ -1,8 +1,14 @@
 # Copy Number Variation Data 
 
-**cnv-data** is a repository that provides data for the CNV booklet.
+**cnv-data** is a repository that provides data for the [Copy Number Variation Booklet](https://alexandra-valeanu.github.io/cnv-booklet/).
 
-## Main Features
+## Copyright information
+This data is licensed under a [Creative Commons Attribution 4.0 International License](https://creativecommons.org/licenses/by/4.0/).
+
+## Citing
+For complete citation details of our work or the data resources we used, please refer to the [Documentation](https://alexandra-valeanu.github.io/cnv-booklet/documentation/#how-to-cite).
+
+## Main features of this repository
 
 - Download the latest ORPHADATA files
 - Download the latest HGNC gene information
@@ -24,7 +30,10 @@ conda activate data_env
 pip install -r requirements.txt
 ```
 
-### Update the datasets
+## Add a new CNV (optional)
+To add a new CNV or modify existing ones (e.g. add a disease identifier like an ORPHAcode, or a description), edit [cnv_data.xlsx](cnv-data/input/cnv_data.xlsx)
+
+## Update the datasets
 ```sh
 python scripts/update_datasets.py
 ```
