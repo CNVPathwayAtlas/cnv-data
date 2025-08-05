@@ -96,7 +96,10 @@ def parse_prevalence(path, orphacodes):
     for code in orphacodes:
         disorder = root.find(f".//Disorder[OrphaCode='{code}']")
         if disorder is None:
+            prevalence[code] = "Unknown"
             continue
+
+        found_worldwide = False  # Track whether a valid entry was found
 
         for prev in disorder.findall("PrevalenceList/Prevalence"):
             geo = prev.findtext("PrevalenceGeographic/Name[@lang='en']")
@@ -106,17 +109,18 @@ def parse_prevalence(path, orphacodes):
             if geo != "Worldwide" or not class_:
                 continue
 
-            if code not in prevalence:
-                prevalence[code] = class_
+            prevalence[code] = class_
+            found_worldwide = True
 
             pmids = pmid_pattern.findall(source_text)
             prevalence_source[code].extend(pmids)
+            break  # stop after the first valid Worldwide entry
 
-        # Add Unknown if there is no worldwide prevalence found
-        if code not in prevalence:
+        if not found_worldwide:
             prevalence[code] = "Unknown"
 
     return prevalence, prevalence_source
+
 
 
 
