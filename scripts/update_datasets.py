@@ -89,27 +89,36 @@ def parse_phenotypes(path, orphacodes, target_freq="Very frequent (99-80%)"):
 
 def parse_prevalence(path, orphacodes):
     root = ET.parse(path).getroot()
-    prev_data = defaultdict(list)
+    prevalence = {}
+    prevalence_source = defaultdict(list)
     pmid_pattern = re.compile(r'(\d+)\[PMID\]')
-    for disorder in root.findall(".//Disorder"):
-        code = disorder.findtext("OrphaCode")
-        if code not in orphacodes:
+
+    for code in orphacodes:
+        disorder = root.find(f".//Disorder[OrphaCode='{code}']")
+        if disorder is None:
             continue
-        prev_list = disorder.find("PrevalenceList")
-        if prev_list is None:
-            continue
-        for prev in prev_list.findall("Prevalence"):
-            val = prev.findtext("ValMoy") or ""
-            class_ = prev.findtext("PrevalenceClass/Name[@lang='en']") or ""
+
+        for prev in disorder.findall("PrevalenceList/Prevalence"):
+            geo = prev.findtext("PrevalenceGeographic/Name[@lang='en']")
+            class_ = prev.findtext("PrevalenceClass/Name[@lang='en']")
             source_text = prev.findtext("Source") or ""
+
+            if geo != "Worldwide" or not class_:
+                continue
+
+            if code not in prevalence:
+                prevalence[code] = class_
+
             pmids = pmid_pattern.findall(source_text)
-            prevalence_str = val
-            if class_:
-                prevalence_str += f" ({class_})"
-            if pmids:
-                prevalence_str += " (PMID:" + ",".join(pmids) + ")"
-            prev_data[code].append(prevalence_str)
-    return prev_data
+            prevalence_source[code].extend(pmids)
+
+        # Add Unknown if there is no worldwide prevalence found
+        if code not in prevalence:
+            prevalence[code] = "Unknown"
+
+    return prevalence, prevalence_source
+
+
 
 def parse_omim(path, orphacodes):
     root = ET.parse(path).getroot()
@@ -128,18 +137,20 @@ def parse_omim(path, orphacodes):
                 omim_map[code].append(ref)
     return omim_map
 
-def save_combined_csv(defs, phenos, prevs, omims, orphacodes, output_path):
+def save_combined_csv(defs, phenos, prevalence, prevalence_source, omims, orphacodes, output_path):
     rows = []
     for code in orphacodes:
         rows.append({
             "OrphaCode": code,
             "Definition": defs.get(code, ""),
             "Phenotypes": "; ".join(phenos.get(code, [])),
-            "Prevalence": "; ".join(prevs.get(code, [])),
+            "Prevalence": prevalence.get(code, ""),
+            "Prevalence_pmid": ", ".join(prevalence_source.get(code, [])),
             "OMIM": "; ".join(omims.get(code, []))
         })
     df = pd.DataFrame(rows)
     df.to_csv(output_path, index=False)
+
 
 # HGNC download and processing
 def download_hgnc(tmpdir):
@@ -215,7 +226,8 @@ def main():
         defs = parse_definitions(def_path, orphacodes)
         omims = parse_omim(def_path, orphacodes)
         phenos = parse_phenotypes(os.path.join(tmpdir, "phenotypes.xml"), orphacodes)
-        prevs = parse_prevalence(os.path.join(tmpdir, "prevalence.xml"), orphacodes)
+        prevalence, prevalence_source = parse_prevalence(os.path.join(tmpdir, "prevalence.xml"), orphacodes)
+
 
         # Download and filter HGNC
         hgnc_path = download_hgnc(tmpdir)
@@ -225,7 +237,7 @@ def main():
 
     # Save Orphadata processed CSV
     csv_path = os.path.join(DATA_PROCESSED_DIR, f"orphadata_filtered_{today}.csv")
-    save_combined_csv(defs, phenos, prevs, omims, orphacodes, csv_path)
+    save_combined_csv(defs, phenos, prevalence, prevalence_source, omims, orphacodes, csv_path)
 
     # Save HGNC TSV
     hgnc_out_path = os.path.join(DATA_PROCESSED_DIR, f"hgnc_filtered_{today}.csv")
