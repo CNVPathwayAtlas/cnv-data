@@ -68,23 +68,36 @@ def parse_definitions(path, orphacodes):
             data[code] = definition
     return data
 
-def parse_phenotypes(path, orphacodes, target_freq="Very frequent (99-80%)"):
+
+def parse_phenotypes(path, orphacodes):
+    # Take the very freq, freq, and occasional phenotypes
+    freq_map = {
+        "Very frequent (99-80%)": "very_frequent",
+        "Frequent (79-30%)": "frequent",
+        "Occasional (29-5%)": "occasional",
+    }
+
     root = ET.parse(path).getroot()
-    phenos = defaultdict(list)
+    phenos = defaultdict(lambda: {"very_frequent": [], "frequent": [], "occasional": []})
+
     for disorder in root.findall(".//Disorder"):
         code = disorder.findtext("OrphaCode")
         if code not in orphacodes:
             continue
+
         assoc_list = disorder.find("HPODisorderAssociationList")
         if assoc_list is None:
             continue
+
         for assoc in assoc_list.findall("HPODisorderAssociation"):
             freq_name = assoc.findtext("HPOFrequency/Name[@lang='en']")
-            if freq_name == target_freq:
+            category = freq_map.get(freq_name)
+            if category:
                 hpo_term = assoc.findtext("HPO/HPOTerm") or ""
                 hpo_id = assoc.findtext("HPO/HPOId") or ""
                 if hpo_term and hpo_id:
-                    phenos[code].append(f"{hpo_term} ({hpo_id})")
+                    phenos[code][category].append(f"{hpo_term} ({hpo_id})")
+
     return phenos
 
 def parse_prevalence(path, orphacodes):
@@ -121,9 +134,6 @@ def parse_prevalence(path, orphacodes):
 
     return prevalence, prevalence_source
 
-
-
-
 def parse_omim(path, orphacodes):
     root = ET.parse(path).getroot()
     omim_map = defaultdict(list)
@@ -144,17 +154,19 @@ def parse_omim(path, orphacodes):
 def save_combined_csv(defs, phenos, prevalence, prevalence_source, omims, orphacodes, output_path):
     rows = []
     for code in orphacodes:
+        phenotypes = phenos.get(code, {"very_frequent": [], "frequent": [], "occasional": []})
         rows.append({
             "OrphaCode": code,
             "Definition": defs.get(code, ""),
-            "Phenotypes": "; ".join(phenos.get(code, [])),
+            "Phenotypes_Very_frequent": "; ".join(phenotypes["very_frequent"]),
+            "Phenotypes_Frequent": "; ".join(phenotypes["frequent"]),
+            "Phenotypes_Occasional": "; ".join(phenotypes["occasional"]),
             "Prevalence": prevalence.get(code, ""),
             "Prevalence_pmid": ", ".join(prevalence_source.get(code, [])),
             "OMIM": "; ".join(omims.get(code, []))
         })
     df = pd.DataFrame(rows)
     df.to_csv(output_path, index=False)
-
 
 # HGNC download and processing
 def download_hgnc(tmpdir):
@@ -208,6 +220,12 @@ def clean_latest_dir():
         if os.path.islink(path) or os.path.isfile(path):
             os.remove(path)
 
+def clean_processed_dir():
+    for filename in os.listdir(DATA_PROCESSED_DIR):
+        path = os.path.join(DATA_PROCESSED_DIR, filename)
+        if os.path.islink(path) or os.path.isfile(path):
+            os.remove(path)
+
 # Main 
 def main():
     ensure_dirs()
@@ -238,6 +256,9 @@ def main():
         filtered_hgnc = filter_hgnc(hgnc_path)
 
     today = datetime.datetime.now().strftime("%Y-%m-%d")
+
+    # Clean previous versions in the /processed folder
+    clean_processed_dir()
 
     # Save Orphadata processed CSV
     csv_path = os.path.join(DATA_PROCESSED_DIR, f"orphadata_filtered_{today}.csv")
