@@ -1,4 +1,4 @@
-name: Trigger cnv-booklet YAML rebuild
+name: Trigger cnv-website YAML rebuild
 
 on:
   workflow_dispatch:
@@ -12,9 +12,9 @@ jobs:
   notify-cnv-booklet:
     runs-on: ubuntu-latest
     steps:
-      - name: Trigger cnv-booklet via repository_dispatch
+      - name: Trigger cnv-website via repository_dispatch
         uses: peter-evans/repository-dispatch@v3
         with:
           token: ${{ secrets.CNV_RELEASE_AUTOMATION }}
-          repository: alexandra-valeanu/cnv-booklet
+          repository: CNVPathwayAtlas/cnv-website
           event-type: cnv-data-updated
