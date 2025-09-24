@@ -1,12 +1,12 @@
 # Copy Number Variation Data 
 
-**cnv-data** is a repository that provides data for the [Copy Number Variation Booklet](https://github.com/alexandra-valeanu/cnv-booklet).
+**cnv-data** is a repository that provides data for the [CNVPathwayAtlas](https://github.com/CNVPathwayAtlas/cnv-website)
 
 ## Copyright information
 This data is licensed under a [Creative Commons Attribution 4.0 International License](https://creativecommons.org/licenses/by/4.0/).
 
 ## Citing
-For complete citation details of our work or the data resources we used, please refer to the [Documentation](https://alexandra-valeanu.github.io/cnv-booklet/documentation/#how-to-cite).
+For complete citation details of our work or the data resources we used, please refer to the [Documentation](https://cnvpathwayatlas.github.io/cnv-website/documentation/#how-to-cite).
 
 ## Main features of this repository
 

@@ -9,7 +9,7 @@ on:
       - version.txt
 
 jobs:
-  notify-cnv-booklet:
+  notify-cnv-website:
     runs-on: ubuntu-latest
     steps:
       - name: Trigger cnv-website via repository_dispatch
