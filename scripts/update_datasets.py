@@ -70,15 +70,16 @@ def parse_definitions(path, orphacodes):
 
 
 def parse_phenotypes(path, orphacodes):
-    # Take the very freq, freq, and occasional phenotypes
+    # Take the obligate, very freq, freq, and occasional phenotypes
     freq_map = {
+        "Obligate (100%)": "obligate",
         "Very frequent (99-80%)": "very_frequent",
         "Frequent (79-30%)": "frequent",
         "Occasional (29-5%)": "occasional",
     }
 
     root = ET.parse(path).getroot()
-    phenos = defaultdict(lambda: {"very_frequent": [], "frequent": [], "occasional": []})
+    phenos = defaultdict(lambda: {"obligate": [], "very_frequent": [], "frequent": [], "occasional": []})
 
     for disorder in root.findall(".//Disorder"):
         code = disorder.findtext("OrphaCode")
@@ -154,10 +155,11 @@ def parse_omim(path, orphacodes):
 def save_combined_csv(defs, phenos, prevalence, prevalence_source, omims, orphacodes, output_path):
     rows = []
     for code in orphacodes:
-        phenotypes = phenos.get(code, {"very_frequent": [], "frequent": [], "occasional": []})
+        phenotypes = phenos.get(code, {"obligate": [], "very_frequent": [], "frequent": [], "occasional": []})
         rows.append({
             "OrphaCode": code,
             "Definition": defs.get(code, ""),
+            "Phenotypes_Obligate": "; ".join(phenotypes["obligate"]),
             "Phenotypes_Very_frequent": "; ".join(phenotypes["very_frequent"]),
             "Phenotypes_Frequent": "; ".join(phenotypes["frequent"]),
             "Phenotypes_Occasional": "; ".join(phenotypes["occasional"]),
