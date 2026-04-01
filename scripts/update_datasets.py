@@ -75,11 +75,12 @@ def parse_phenotypes(path, orphacodes):
         "Obligate (100%)": "obligate",
         "Very frequent (99-80%)": "very_frequent",
         "Frequent (79-30%)": "frequent",
-        "Occasional (29-5%)": "occasional",
+        "Occasional (29-5%)": "occasional", 
+        "Very rare (&lt;4-1%)": "very_rare"
     }
 
     root = ET.parse(path).getroot()
-    phenos = defaultdict(lambda: {"obligate": [], "very_frequent": [], "frequent": [], "occasional": []})
+    phenos = defaultdict(lambda: {"obligate": [], "very_frequent": [], "frequent": [], "occasional": [], "very_rare": []})
 
     for disorder in root.findall(".//Disorder"):
         code = disorder.findtext("OrphaCode")
@@ -155,7 +156,7 @@ def parse_omim(path, orphacodes):
 def save_combined_csv(defs, phenos, prevalence, prevalence_source, omims, orphacodes, output_path):
     rows = []
     for code in orphacodes:
-        phenotypes = phenos.get(code, {"obligate": [], "very_frequent": [], "frequent": [], "occasional": []})
+        phenotypes = phenos.get(code, {"obligate": [], "very_frequent": [], "frequent": [], "occasional": [], "very_rare": []})
         rows.append({
             "OrphaCode": code,
             "Definition": defs.get(code, ""),
@@ -163,6 +164,7 @@ def save_combined_csv(defs, phenos, prevalence, prevalence_source, omims, orphac
             "Phenotypes_Very_frequent": "; ".join(phenotypes["very_frequent"]),
             "Phenotypes_Frequent": "; ".join(phenotypes["frequent"]),
             "Phenotypes_Occasional": "; ".join(phenotypes["occasional"]),
+            "Phenotypes_Very_rare": "; ".join(phenotypes["very_rare"]),
             "Prevalence": prevalence.get(code, ""),
             "Prevalence_pmid": ", ".join(prevalence_source.get(code, [])),
             "OMIM": "; ".join(omims.get(code, []))
