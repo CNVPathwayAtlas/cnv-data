@@ -191,6 +191,7 @@ def filter_hgnc(hgnc_path):
         "entrez_id",
         "ensembl_gene_id",
         "uniprot_ids",
+        "locus_group",
     ]
     return df[columns_of_interest].copy()
 
