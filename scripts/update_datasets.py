@@ -76,11 +76,12 @@ def parse_phenotypes(path, orphacodes):
         "Very frequent (99-80%)": "very_frequent",
         "Frequent (79-30%)": "frequent",
         "Occasional (29-5%)": "occasional", 
-        "Very rare (&lt;4-1%)": "very_rare"
+        "Very rare (<4-1%)": "very_rare", 
+        "Excluded (0%)": "excluded"
     }
 
     root = ET.parse(path).getroot()
-    phenos = defaultdict(lambda: {"obligate": [], "very_frequent": [], "frequent": [], "occasional": [], "very_rare": []})
+    phenos = defaultdict(lambda: {"obligate": [], "very_frequent": [], "frequent": [], "occasional": [], "very_rare": [], "excluded": []})
 
     for disorder in root.findall(".//Disorder"):
         code = disorder.findtext("OrphaCode")
@@ -156,15 +157,16 @@ def parse_omim(path, orphacodes):
 def save_combined_csv(defs, phenos, prevalence, prevalence_source, omims, orphacodes, output_path):
     rows = []
     for code in orphacodes:
-        phenotypes = phenos.get(code, {"obligate": [], "very_frequent": [], "frequent": [], "occasional": [], "very_rare": []})
+        phenotypes = phenos.get(code, {"obligate": [], "very_frequent": [], "frequent": [], "occasional": [], "very_rare": [], "excluded": []})
         rows.append({
             "OrphaCode": code,
             "Definition": defs.get(code, ""),
-            "Phenotypes_Obligate": "; ".join(phenotypes["obligate"]),
-            "Phenotypes_Very_frequent": "; ".join(phenotypes["very_frequent"]),
-            "Phenotypes_Frequent": "; ".join(phenotypes["frequent"]),
-            "Phenotypes_Occasional": "; ".join(phenotypes["occasional"]),
-            "Phenotypes_Very_rare": "; ".join(phenotypes["very_rare"]),
+            "Phenotypes_Obligate(100%)": "; ".join(phenotypes["obligate"]),
+            "Phenotypes_Very_frequent(99-80%)": "; ".join(phenotypes["very_frequent"]),
+            "Phenotypes_Frequent(79-30%)": "; ".join(phenotypes["frequent"]),
+            "Phenotypes_Occasional(29-5%)": "; ".join(phenotypes["occasional"]),
+            "Phenotypes_Very_rare(<4-1%)": "; ".join(phenotypes["very_rare"]),
+            "Phenotypes_Excluded(0%)": "; ".join(phenotypes["excluded"]),
             "Prevalence": prevalence.get(code, ""),
             "Prevalence_pmid": ", ".join(prevalence_source.get(code, [])),
             "OMIM": "; ".join(omims.get(code, []))
