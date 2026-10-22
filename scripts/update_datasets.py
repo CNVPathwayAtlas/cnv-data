@@ -1,4 +1,4 @@
-"""Download Orphadata, HGNC and WikiPathways data and build the processed CNV datasets.
+"""Download Orphadata, HGNC, WikiPathways and HPO data and build the processed CNV datasets.
 
 The script does these steps:
 1. Validate the curated input (data/input/cnv_data.tsv).
@@ -23,6 +23,7 @@ import pandas as pd
 import requests
 
 from cnv_input import INPUT_FILE, load_input, parse_orphacodes, split_list, cnv_key
+from source_notes import write_zenodo
 from validate_input import validate, report
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -38,6 +39,11 @@ ORPHADATA_FILES = {
 }
 HGNC_URL = "https://storage.googleapis.com/public-download-files/hgnc/tsv/tsv/hgnc_complete_set.txt"
 WIKIPATHWAYS_URL = "https://www.wikipathways.org/wikipathways-assets/pathways/{wp}/{wp}.{ext}"
+HPO_RELEASE_URL = "https://api.github.com/repos/obophenotype/human-phenotype-ontology/releases/latest"
+HPO_URL = "https://github.com/obophenotype/human-phenotype-ontology/releases/download/{release}/hp.json"
+HPO_ROOT = "HP:0000118"  # Phenotypic abnormality: its direct children are the top-level categories
+# Categories that are not the primary category of a term when the term has an other category
+HPO_SECONDARY = {"HP:0025142", "HP:0002664"}  # Constitutional symptom, Neoplasm
 
 TIMEOUT = 300
 
@@ -111,11 +117,20 @@ def wikipathways_release(gpml_path):
     return {"revision": root.get("Version", ""), "last_modified": root.get("Last-Modified", "")}
 
 
+def hpo_release():
+    """Return the tag and date of the latest HPO release on GitHub."""
+    response = requests.get(HPO_RELEASE_URL, timeout=TIMEOUT)
+    response.raise_for_status()
+    data = response.json()
+    return {"release": data["tag_name"], "published": data["published_at"]}
+
+
 def release_ids(sources):
     """Return only the release identifiers of a sources record, for comparison."""
     return {"orphadata": {k: v.get("release_date") for k, v in sources.get("orphadata", {}).items()},
             "hgnc": sources.get("hgnc", {}).get("etag"),
-            "wikipathways": {k: v.get("revision") for k, v in sources.get("wikipathways", {}).items()}}
+            "wikipathways": {k: v.get("revision") for k, v in sources.get("wikipathways", {}).items()},
+            "hpo": sources.get("hpo", {}).get("release")}
 
 
 def load_previous_sources():
@@ -195,6 +210,74 @@ def build_orphadata_table(tmp, orphacodes):
                     "OMIM": "; ".join(info["omim"])})
         rows.append(row)
     return pd.DataFrame(rows)
+
+
+# HPO categories
+
+def load_hpo(path):
+    """Return ({id: label}, {id: [parent ids]}, {old id: current id}) from an HPO obographs JSON file."""
+    graph = json.loads(Path(path).read_text())["graphs"][0]
+    short = lambda iri: iri.rsplit("/", 1)[-1].replace("_", ":")
+    labels, parents, current = {}, defaultdict(list), {}
+    for node in graph["nodes"]:
+        if not node["id"].startswith("http://purl.obolibrary.org/obo/HP_"):
+            continue
+        hpo_id = short(node["id"])
+        meta = node.get("meta", {})
+        for prop in meta.get("basicPropertyValues", []):
+            if prop["pred"].endswith("IAO_0100001"):  # replaced_by
+                current[hpo_id] = prop["val"]
+            elif prop["pred"].endswith("#hasAlternativeId"):
+                current[prop["val"]] = hpo_id
+        if not meta.get("deprecated"):
+            labels[hpo_id] = node.get("lbl", "")
+    for edge in graph["edges"]:
+        if edge["pred"] == "is_a":
+            parents[short(edge["sub"])].append(short(edge["obj"]))
+    return labels, parents, current
+
+
+def build_hpo_categories(orphadata, labels, parents, current, release):
+    """Return the top-level HPO categories of the phenotypes in the Orphadata table.
+
+    The categories of a term are its ancestors that are direct children of HP:0000118.
+    The primary category is the nearest category. Constitutional symptom and Neoplasm are primary
+    only when the term has no other category. A tie is resolved by the lowest HPO ID.
+    """
+    top = {c for c, ps in parents.items() if HPO_ROOT in ps and c in labels}
+    hpo_ids = sorted({i for column in FREQUENCIES.values() for value in orphadata[column]
+                      for i in re.findall(r"HP:\d{7}", value)})
+
+    def distances(hpo_id):
+        found, frontier, depth, seen = {}, [hpo_id], 0, set()
+        while frontier:
+            for term in frontier:
+                if term in top and term not in found:
+                    found[term] = depth
+            seen.update(frontier)
+            frontier = [p for t in frontier for p in parents.get(t, []) if p not in seen]
+            depth += 1
+        return found
+
+    terms, not_mapped = {}, []
+    for hpo_id in hpo_ids:
+        term = current.get(hpo_id, hpo_id)
+        found = distances(term) if term in labels else {}
+        if not found:
+            not_mapped.append(hpo_id)
+            continue
+        primary = min(found, key=lambda c: (c in HPO_SECONDARY, found[c], c))
+        terms[hpo_id] = {"current_id": term, "label": labels[term], "primary": primary,
+                         "categories": sorted(found)}
+    if not_mapped:
+        print(f"[WARN] {len(not_mapped)} HPO IDs are not in HPO {release} or have no category: {', '.join(not_mapped)}")
+
+    primaries = sorted({t["primary"] for t in terms.values()})
+    categories = {c: {"label": labels[c], "phenotypes": sorted(i for i, t in terms.items() if t["primary"] == c)}
+                  for c in primaries}
+    return {"version": 2, "hpo_release": release, "categories": categories,
+            "phenotypeToCategory": {i: t["primary"] for i, t in terms.items()},
+            "terms": terms, "not_mapped": not_mapped}
 
 
 # HGNC mapping
@@ -286,9 +369,12 @@ def parse_pathway_genes(wp_id, gpml_path, index, hgnc_by_id):
 # Output
 
 def write_outputs(out_dir, tables, pathway_files, sources):
-    for name, df in tables.items():
+    for name, data in tables.items():
+        if name.endswith(".json"):
+            (out_dir / name).write_text(json.dumps(data, indent=2) + "\n")
+            continue
         sep = "," if name.endswith(".csv") else "\t"
-        df.to_csv(out_dir / name, sep=sep, index=False, lineterminator="\n")
+        data.to_csv(out_dir / name, sep=sep, index=False, lineterminator="\n")
     (out_dir / "pathways").mkdir()
     for path in pathway_files:
         shutil.copy(path, out_dir / "pathways" / path.name)
@@ -325,6 +411,7 @@ def publish(new_dir, tables, today):
     shutil.rmtree(PATHWAYS_DIR, ignore_errors=True)
     shutil.copytree(new_dir / "pathways", PATHWAYS_DIR)
     VERSION_FILE.write_text(f"v_{today}")
+    write_zenodo()
 
 
 def main():
@@ -348,7 +435,7 @@ def main():
         tmp = Path(tmp_name)
 
         releases = {"orphadata": {name: orphadata_release(url) for name, url in ORPHADATA_FILES.items()},
-                    "hgnc": hgnc_release(), "wikipathways": {}}
+                    "hgnc": hgnc_release(), "wikipathways": {}, "hpo": hpo_release()}
         pathway_files = []
         for wp in wp_ids:
             for ext in ("gpml", "svg"):
@@ -367,6 +454,9 @@ def main():
         releases["hgnc"].update({"url": HGNC_URL, "sha256": sha256(tmp / "hgnc.txt")})
         for wp in wp_ids:
             releases["wikipathways"][wp]["url"] = WIKIPATHWAYS_URL.format(wp=wp, ext="gpml")
+        hpo_url = HPO_URL.format(release=releases["hpo"]["release"])
+        download(hpo_url, tmp / "hp.json")
+        releases["hpo"].update({"url": hpo_url, "sha256": sha256(tmp / "hp.json")})
 
         orphadata = build_orphadata_table(tmp, orphacodes)
         hgnc = load_hgnc(tmp / "hgnc.txt")
@@ -383,8 +473,11 @@ def main():
         hgnc_subset = hgnc[hgnc["hgnc_id"].isin(used_ids)].sort_values(
             "hgnc_id", key=lambda ids: ids.str[5:].astype(int))
 
+        hpo_categories = build_hpo_categories(orphadata, *load_hpo(tmp / "hp.json"), releases["hpo"]["release"])
+
         tables = {"orphadata_filtered.csv": orphadata, "hgnc_filtered.tsv": hgnc_subset,
-                  "gene_mapping.tsv": gene_mapping, "pathway_genes.tsv": pathway_genes}
+                  "gene_mapping.tsv": gene_mapping, "pathway_genes.tsv": pathway_genes,
+                  "hpo_categories.json": hpo_categories}
 
         new_dir = tmp / "out"
         new_dir.mkdir()

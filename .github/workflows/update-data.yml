@@ -1,10 +1,10 @@
 name: Update data from sources
 
-# Checks Orphadata, HGNC and WikiPathways for new releases every week.
+# Checks Orphadata, HGNC, WikiPathways and HPO for new releases on the first day of each month.
 # A change of version.txt starts the release and the website rebuild workflows.
 on:
   schedule:
-    - cron: "0 5 * * 1"
+    - cron: "0 5 1 * *"
   workflow_dispatch:
     inputs:
       force:
@@ -49,7 +49,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A data version.txt
+          git add -A data version.txt .zenodo.json
           git diff --cached --quiet && exit 0
           git commit -m "Update data $(cat version.txt)"
           git push origin HEAD:main

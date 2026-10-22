@@ -24,12 +24,16 @@ jobs:
           version=$(awk '{$1=$1};1' version.txt)
           echo "version=$version" >> $GITHUB_OUTPUT
           
+      # Release notes: the release of each data source
+      - name: Write release notes
+        run: python3 scripts/source_notes.py > "$RUNNER_TEMP/notes.md"
+
       - name: Create or update GitHub release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.get_version.outputs.version }}
           name: Release ${{ steps.get_version.outputs.version }}
-          body: Automated release for version ${{ steps.get_version.outputs.version }}
+          body_path: ${{ runner.temp }}/notes.md
           draft: false
           prerelease: false
         env:
