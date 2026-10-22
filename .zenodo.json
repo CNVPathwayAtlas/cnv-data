@@ -1,0 +1,9 @@
+{
+  "upload_type": "software",
+  "description": "Data for the CNVPathwayAtlas (https://cnvpathwayatlas.github.io/cnv-website/): curated rare copy number variants linked to Orphanet disorders, HPO phenotypes, HGNC genes and WikiPathways pathways.",
+  "creators": [
+    {"name": "Valeanu, Alexandra"}
+  ],
+  "license": "cc-by-4.0",
+  "keywords": ["copy number variation", "rare diseases", "Orphanet", "HPO", "HGNC", "WikiPathways"]
+}
