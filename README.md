@@ -43,7 +43,7 @@ pip install -r requirements.txt
 ## Add or edit a CNV with an issue form
 Open a [new issue](../../issues/new/choose) and select one of these forms:
 - **Add a CNV**: complete one field for each column.
-- **Edit a CNV**: give the CNV identifier (e.g. `16p11.2-distal`) and complete only the fields to edit. An empty field keeps the current value, `-` makes a field empty. A list field replaces the full current list.
+- **Edit a CNV**: select the CNV in the list (e.g. `16p11.2-distal`) and complete only the fields to edit. An empty field keeps the current value, `-` makes a field empty. A list field replaces the full current list.
 
 The workflow [cnv-issue.yml](.github/workflows/cnv-issue.yml) runs [cnv_from_issue.py](scripts/cnv_from_issue.py). It:
 1. adds or edits the row in `data/input/cnv_data.tsv` and checks it with `validate_input.py`,
@@ -55,6 +55,8 @@ The workflow [cnv-issue.yml](.github/workflows/cnv-issue.yml) runs [cnv_from_iss
    - each PubMed ID exists
 2. writes the result as a comment on the issue (an edit shows the old and the new value),
 3. when the check passes, opens a pull request from the branch `cnv/issue-<number>`.
+
+The workflow [update-edit-form.yml](.github/workflows/update-edit-form.yml) runs [update_edit_form.py](scripts/update_edit_form.py) when `data/input/cnv_data.tsv` changes on `main`. It writes the CNV list of the Edit a CNV form.
 
 Edit the issue to correct an error: the workflow runs again and updates the pull request. Merge the pull request to start the data update.
 Anyone can submit a form. Only a maintainer with write access to the repository can merge the pull request, so every change needs a maintainer approval.

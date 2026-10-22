@@ -6,17 +6,57 @@ body:
   - type: markdown
     attributes:
       value: |
-        Give the identifier of the CNV, then complete only the fields to edit.
+        Select the CNV, then complete only the fields to edit.
         An empty field keeps the current value. Write `-` to make a field empty.
         A list field (ORPHAcodes, genes, PubMed IDs) replaces the full current list.
         After you submit the issue, a workflow checks the values and writes the result in a comment.
         When the check passes, the workflow opens a pull request. Edit the issue to correct an error.
-  - type: input
+  - type: dropdown
     id: cnv_id
     attributes:
       label: CNV identifier
-      description: Locus, plus `-extra` when the CNV has an extra value. It is the CNV page name.
-      placeholder: 16p11.2-distal
+      description: The CNV to edit (the CNV page name).
+      options:
+        # CNV options start
+        - "10q11.21-q11.23"
+        - "10q23.1-q23.2"
+        - "11p11.2"
+        - "13q12.11-CRYL1"
+        - "13q12.12"
+        - "15q11.2"
+        - "15q11.2-q13.1"
+        - "15q13.1-q13.3"
+        - "15q13.2-q13.3"
+        - "15q25.2-q25.3"
+        - "16p11.2-distal"
+        - "16p11.2-proximal"
+        - "16p12.2"
+        - "16p13.11"
+        - "17p11.2"
+        - "17p13.3-YWHAE"
+        - "17p13.3-PAFAH1B1"
+        - "17q11.2"
+        - "17q12"
+        - "1p36.33-p36.32"
+        - "1q21.1-proximal,BP2-BP3"
+        - "1q21.1-q21.2-distal"
+        - "22q11.2-distal,type-I,D-E,D-F"
+        - "22q11.21"
+        - "2q11.1-q11.2"
+        - "2q13"
+        - "2q13-NPHP1"
+        - "2q21.1"
+        - "2q37.3"
+        - "3q29"
+        - "4p16.3"
+        - "5q35.2-q35.3"
+        - "7q11.23"
+        - "7q11.23-distal"
+        - "8p23.1"
+        - "8q11.23"
+        - "22q13.33"
+        - "16p13.3"
+        # CNV options end
     validations:
       required: true
   - type: input

@@ -1,0 +1,45 @@
+name: Update the Edit a CNV form
+
+# Writes the CNV identifiers of data/input/cnv_data.tsv as the options of the 'Edit a CNV' issue form.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - data/input/cnv_data.tsv
+  workflow_dispatch:
+
+concurrency:
+  group: update-edit-form
+  cancel-in-progress: false
+
+jobs:
+  update-form:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout cnv-data
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Write the CNV options
+        run: python scripts/update_edit_form.py
+
+      - name: Commit and push the form
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/ISSUE_TEMPLATE/edit-cnv.yml
+          git diff --cached --quiet && exit 0
+          git commit -m "Update the CNV options of the Edit a CNV form"
+          # The data update workflow can push to main at the same time
+          git pull --rebase origin main
+          git push origin HEAD:main
