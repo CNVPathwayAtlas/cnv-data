@@ -1,0 +1,70 @@
+name: Edit a CNV
+description: Edit an existing CNV in data/input/cnv_data.tsv. A workflow checks the input and opens a pull request.
+title: "Edit CNV: "
+labels: ["edit-cnv"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Give the identifier of the CNV, then complete only the fields to edit.
+        An empty field keeps the current value. Write `-` to make a field empty.
+        A list field (ORPHAcodes, genes, PubMed IDs) replaces the full current list.
+        After you submit the issue, a workflow checks the values and writes the result in a comment.
+        When the check passes, the workflow opens a pull request. Edit the issue to correct an error.
+  - type: input
+    id: cnv_id
+    attributes:
+      label: CNV identifier
+      description: Locus, plus `-extra` when the CNV has an extra value. It is the CNV page name.
+      placeholder: 16p11.2-distal
+    validations:
+      required: true
+  - type: input
+    id: locus
+    attributes:
+      label: Locus
+      placeholder: 16p11.2
+  - type: input
+    id: extra
+    attributes:
+      label: Extra
+      placeholder: distal
+  - type: input
+    id: pathway_name
+    attributes:
+      label: Pathway name
+  - type: input
+    id: wikipathways_id
+    attributes:
+      label: WikiPathways ID
+      placeholder: WP4950
+  - type: textarea
+    id: orphacodes
+    attributes:
+      label: ORPHAcodes
+      description: One `code(cause)` item on each line, or items separated by `;`.
+  - type: input
+    id: region_hg19
+    attributes:
+      label: Region GRCh37 (hg19)
+      placeholder: Chr16:28823196-29046783
+  - type: input
+    id: region_hg38
+    attributes:
+      label: Region GRCh38 (hg38)
+      placeholder: Chr16:28811875-29035462
+  - type: textarea
+    id: genes
+    attributes:
+      label: Genes
+      description: HGNC symbols, separated by `;`, `,`, spaces or new lines.
+  - type: textarea
+    id: pubmed_id
+    attributes:
+      label: PubMed IDs
+      description: Separated by `;`, `,`, spaces or new lines.
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Free text. New lines become spaces.

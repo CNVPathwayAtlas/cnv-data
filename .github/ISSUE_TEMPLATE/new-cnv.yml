@@ -1,0 +1,75 @@
+name: Add a CNV
+description: Add a new CNV to data/input/cnv_data.tsv. A workflow checks the input and opens a pull request.
+title: "Add CNV: "
+labels: ["new-cnv"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Complete one field for each column of `data/input/cnv_data.tsv`.
+        After you submit the issue, a workflow checks the values and writes the result in a comment.
+        When the check passes, the workflow opens a pull request. Edit the issue to correct an error.
+  - type: input
+    id: locus
+    attributes:
+      label: Locus
+      description: Cytogenetic band.
+      placeholder: 16p11.2
+    validations:
+      required: true
+  - type: input
+    id: extra
+    attributes:
+      label: Extra
+      description: Sub-region or key gene (optional). It is part of the CNV page name, e.g. `16p11.2-distal`.
+      placeholder: distal
+  - type: input
+    id: pathway_name
+    attributes:
+      label: Pathway name
+      description: WikiPathways pathway name.
+      placeholder: 16p11.2 distal deletion syndrome
+  - type: input
+    id: wikipathways_id
+    attributes:
+      label: WikiPathways ID
+      placeholder: WP4950
+  - type: textarea
+    id: orphacodes
+    attributes:
+      label: ORPHAcodes
+      description: One `code(cause)` item on each line, or items separated by `;`.
+      placeholder: |
+        261330(microdeletion)
+        261337(microduplication)
+  - type: input
+    id: region_hg19
+    attributes:
+      label: Region GRCh37 (hg19)
+      placeholder: Chr16:28823196-29046783
+    validations:
+      required: true
+  - type: input
+    id: region_hg38
+    attributes:
+      label: Region GRCh38 (hg38)
+      placeholder: Chr16:28811875-29035462
+    validations:
+      required: true
+  - type: textarea
+    id: genes
+    attributes:
+      label: Genes
+      description: HGNC symbols, separated by `;`, `,`, spaces or new lines.
+      placeholder: ATXN2L;TUFM;SH2B1
+  - type: textarea
+    id: pubmed_id
+    attributes:
+      label: PubMed IDs
+      description: Separated by `;`, `,`, spaces or new lines.
+      placeholder: 21948486;27602560
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Free text. New lines become spaces.

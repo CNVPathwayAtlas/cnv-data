@@ -1,0 +1,60 @@
+name: Add or edit CNV from issue
+
+# Reads a 'new-cnv' or 'edit-cnv' issue form, checks the row and opens a pull request that changes data/input/cnv_data.tsv.
+# An edit of the issue runs the check again and updates the pull request.
+# Anyone can open the issue. Only a user with write access can merge the pull request.
+on:
+  issues:
+    types: [opened, edited]
+
+concurrency:
+  group: cnv-issue-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  cnv-from-issue:
+    if: contains(github.event.issue.labels.*.name, 'new-cnv') || contains(github.event.issue.labels.*.name, 'edit-cnv')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      ISSUE: ${{ github.event.issue.number }}
+      BRANCH: cnv/issue-${{ github.event.issue.number }}
+    steps:
+      - name: Checkout cnv-data
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Add or edit the row and check it
+        id: cnv
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: python scripts/cnv_from_issue.py "$RUNNER_TEMP/report.md"
+
+      - name: Comment the result on the issue
+        if: always() && hashFiles(format('{0}/report.md', runner.temp)) != ''
+        run: gh issue comment "$ISSUE" --body-file "$RUNNER_TEMP/report.md"
+
+      - name: Open or update the pull request
+        env:
+          KEY: ${{ steps.cnv.outputs.key }}
+          ACTION: ${{ steps.cnv.outputs.action }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$BRANCH"
+          git add data/input/cnv_data.tsv
+          git commit -m "$ACTION CNV $KEY (#$ISSUE)"
+          git push -f origin "$BRANCH"
+          gh pr view "$BRANCH" > /dev/null 2>&1 || gh pr create --base main --head "$BRANCH" \
+            --title "$ACTION CNV $KEY" --body "$ACTION CNV \`$KEY\` from #$ISSUE. Closes #$ISSUE."
