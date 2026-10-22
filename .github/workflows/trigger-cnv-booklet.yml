@@ -1,4 +1,4 @@
-name: Trigger cnv-website YAML rebuild
+name: Trigger cnv-website rebuild
 
 on:
   workflow_dispatch:
@@ -12,9 +12,18 @@ jobs:
   notify-cnv-website:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout cnv-data
+        uses: actions/checkout@v4
+
+      - name: Read version
+        id: version
+        run: echo "version=$(tr -d '[:space:]' < version.txt)" >> "$GITHUB_OUTPUT"
+
+      # The website checks out this exact commit of cnv-data
       - name: Trigger cnv-website via repository_dispatch
         uses: peter-evans/repository-dispatch@v3
         with:
           token: ${{ secrets.CNV_RELEASE_AUTOMATION }}
           repository: CNVPathwayAtlas/cnv-website
           event-type: cnv-data-updated
+          client-payload: '{"version": "${{ steps.version.outputs.version }}", "sha": "${{ github.sha }}"}'
