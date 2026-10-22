@@ -2,8 +2,19 @@
   "upload_type": "software",
   "description": "Data for the CNVPathwayAtlas (https://cnvpathwayatlas.github.io/cnv-website/): curated rare copy number variants linked to Orphanet disorders, HPO phenotypes, HGNC genes and WikiPathways pathways.",
   "creators": [
-    {"name": "Valeanu, Alexandra"}
+    {
+      "name": "Valeanu, Alexandra"
+    }
   ],
   "license": "cc-by-4.0",
-  "keywords": ["copy number variation", "rare diseases", "Orphanet", "HPO", "HGNC", "WikiPathways"]
+  "keywords": [
+    "copy number variation",
+    "rare diseases",
+    "Orphanet",
+    "HPO",
+    "HGNC",
+    "WikiPathways"
+  ],
+  "version": "v_2026-10-22",
+  "notes": "<p>Data version v_2026-10-22. Sources retrieved on 2026-10-22.</p><ul><li>Orphadata (product 1, disorders): 2026-06-23, version 1.3.42 / 4.1.8 [2025-03-03]</li><li>Orphadata (product 4, HPO phenotypes): 2026-06-23, version 1.3.42 / 4.1.8 [2025-03-03]</li><li>Orphadata (product 9, prevalence): 2026-06-23, version 1.3.42 / 4.1.8 [2025-03-03]</li><li>HGNC: Fri, 16 Oct 2026 13:36:15 GMT</li><li>HPO: v2026-09-01</li><li>WikiPathways WP3998: WP3998_r140063</li><li>WikiPathways WP4657: WP4657_r142436</li><li>WikiPathways WP4905: WP4905_r140827</li><li>WikiPathways WP4906: WP4906_r140358</li><li>WikiPathways WP4932: WP4932_r140747</li><li>WikiPathways WP4940: WP4940_r140408</li><li>WikiPathways WP4942: WP4942_r139128</li><li>WikiPathways WP4949: WP4949_r140507</li><li>WikiPathways WP4950: WP4950_r139952</li><li>WikiPathways WP5221: WP5221_r140829</li><li>WikiPathways WP5222: WP5222_r142546</li><li>WikiPathways WP5223: WP5223_r140831</li><li>WikiPathways WP5224: WP5224_r140536</li><li>WikiPathways WP5287: WP5287_r139902</li><li>WikiPathways WP5345: WP5345_r134459</li><li>WikiPathways WP5346: WP5346_r140364</li><li>WikiPathways WP5348: WP5348_r142466</li><li>WikiPathways WP5352: WP5352_r142547</li><li>WikiPathways WP5362: WP5362_r134655</li><li>WikiPathways WP5365: WP5365_r140193</li><li>WikiPathways WP5366: WP5366_r134450</li><li>WikiPathways WP5367: WP5367_r129307</li><li>WikiPathways WP5376: WP5376_r140825</li><li>WikiPathways WP5380: WP5380_r140549</li><li>WikiPathways WP5381: WP5381_r134446</li><li>WikiPathways WP5399: WP5399_r134656</li><li>WikiPathways WP5401: WP5401_r140836</li><li>WikiPathways WP5402: WP5402_r140041</li><li>WikiPathways WP5405: WP5405_r140819</li><li>WikiPathways WP5406: WP5406_r140821</li><li>WikiPathways WP5407: WP5407_r140040</li><li>WikiPathways WP5408: WP5408_r134535</li><li>WikiPathways WP5409: WP5409_r134420</li><li>WikiPathways WP5412: WP5412_r140838</li><li>WikiPathways WP5502: WP5502_r142414</li><li>WikiPathways WP5510: WP5510_r139934</li><li>WikiPathways WP5546: WP5546_r140338</li><li>WikiPathways WP5566: WP5566_r141133</li></ul><p>The URL and SHA-256 checksum of each file are in data/latest/sources.json.</p>"
 }

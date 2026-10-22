@@ -1,5 +1,5 @@
 {
-  "retrieved": "2026-10-22T08:49:21+00:00",
+  "retrieved": "2026-10-22T11:43:06+00:00",
   "input_sha256": "f29d76b8cb27a43a2799c537a24bd21f73b8bb2049c9fb3db435fa3b8839ec13",
   "orphadata": {
     "definitions": {
@@ -218,5 +218,11 @@
       "last_modified": "20251103125840",
       "url": "https://www.wikipathways.org/wikipathways-assets/pathways/WP5566/WP5566.gpml"
     }
+  },
+  "hpo": {
+    "release": "v2026-09-01",
+    "published": "2026-09-03T06:08:39Z",
+    "url": "https://github.com/obophenotype/human-phenotype-ontology/releases/download/v2026-09-01/hp.json",
+    "sha256": "a7b3a012e7b4007a35a7cf8da35f2373b54cc16907f80d13d62470d31f833501"
   }
 }
