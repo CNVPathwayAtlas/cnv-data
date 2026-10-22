@@ -4,7 +4,7 @@
 
 ## Licence
 The data in this repository is licensed under the [Creative Commons Attribution 4.0 International License](https://creativecommons.org/licenses/by/4.0/) (see [LICENSE](LICENSE)).
-Orphadata content is © Orphanet, licensed under CC BY 4.0. HGNC data is from the HUGO Gene Nomenclature Committee. Pathways are from [WikiPathways](https://www.wikipathways.org/) (CC0).
+Orphadata content is © Orphanet, licensed under CC BY 4.0. HGNC data is from the HUGO Gene Nomenclature Committee. Pathways are from [WikiPathways](https://www.wikipathways.org/) (CC0). Phenotype categories are from the [Human Phenotype Ontology](https://hpo.jax.org/) (see its licence terms).
 
 ## Citing
 For citation details of our work and the data resources we used, refer to the [Documentation](https://cnvpathwayatlas.github.io/cnv-website/documentation/#how-to-cite).
@@ -18,19 +18,20 @@ For citation details of our work and the data resources we used, refer to the [D
 | `data/processed/hgnc_filtered_<date>.tsv` | HGNC records of the CNV genes and the pathway genes |
 | `data/processed/gene_mapping_<date>.tsv` | Input gene symbol → approved HGNC symbol (`approved`, `previous`, `alias`, `not_found`) |
 | `data/processed/pathway_genes_<date>.tsv` | Gene nodes of each WikiPathways pathway, mapped to HGNC |
+| `data/processed/hpo_categories_<date>.json` | Top-level HPO categories (children of HP:0000118) of each Orphadata phenotype, from the HPO release in `sources.json` |
 | `data/processed/sources_<date>.json` | Release date, URL and SHA-256 of each source file |
 | `data/latest/` | Links to the latest processed files |
 | `data/pathways/` | GPML and SVG file of each WikiPathways pathway |
 | `version.txt` | Data version (`v_<date>`) |
 
 ## Automatic update
-The workflow [update-data.yml](.github/workflows/update-data.yml) runs every Monday, and when `data/input/` or `scripts/` changes on `main`. It:
+The workflow [update-data.yml](.github/workflows/update-data.yml) runs on the first day of each month (05:00 UTC), and when `data/input/` or `scripts/` changes on `main`. It:
 1. validates `data/input/cnv_data.tsv`,
-2. reads the release date of each Orphadata product, the HGNC file version and the revision of each pathway,
+2. reads the release date of each Orphadata product, the HGNC file version, the revision of each pathway and the latest HPO release,
 3. stops when no source has a new release and the input is not changed,
 4. otherwise downloads and processes the sources, and writes a new data version only when the processed data is changed.
 
-A new `version.txt` creates a GitHub release and starts the cnv-website rebuild for that commit.
+A new version also writes the release of each source to `.zenodo.json` ([source_notes.py](scripts/source_notes.py)). A new `version.txt` creates a GitHub release with the same list of source releases and starts the cnv-website rebuild for that commit.
 The workflows use the secret `CNV_RELEASE_AUTOMATION` (a token with write access to both repositories).
 
 ## Installation
