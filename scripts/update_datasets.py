@@ -1,294 +1,406 @@
-import os
+"""Download Orphadata, HGNC and WikiPathways data and build the processed CNV datasets.
+
+The script does these steps:
+1. Validate the curated input (data/input/cnv_data.tsv).
+2. Read the release identifiers of each source and compare them with the last run.
+   When no source has a new release, stop (use --force to continue).
+3. Download and process the sources.
+4. When the processed data is different from the latest data, write a new data version.
+"""
+import argparse
+import datetime
+import hashlib
+import json
 import re
-import requests
+import shutil
+import sys
+import tempfile
 import xml.etree.ElementTree as ET
 from collections import defaultdict
+from pathlib import Path
+
 import pandas as pd
-import tempfile
-import datetime
+import requests
 
-# Directories
-DATA_PROCESSED_DIR = os.path.join("data", "processed")
-DATA_LATEST_DIR = os.path.join("data", "latest")
-INPUT_DIR = os.path.join("data", "input")
-VERSION_FILE = "version.txt"
+from cnv_input import INPUT_FILE, load_input, parse_orphacodes, split_list, cnv_key
+from validate_input import validate, report
 
-# Orphadata URLs
+ROOT = Path(__file__).resolve().parent.parent
+PROCESSED_DIR = ROOT / "data" / "processed"
+LATEST_DIR = ROOT / "data" / "latest"
+PATHWAYS_DIR = ROOT / "data" / "pathways"
+VERSION_FILE = ROOT / "version.txt"
+
 ORPHADATA_FILES = {
     "definitions": "https://www.orphadata.com/data/xml/en_product1.xml",
     "phenotypes": "https://www.orphadata.com/data/xml/en_product4.xml",
     "prevalence": "https://www.orphadata.com/data/xml/en_product9_prev.xml",
 }
-
-# HGNC TSV URL
 HGNC_URL = "https://storage.googleapis.com/public-download-files/hgnc/tsv/tsv/hgnc_complete_set.txt"
+WIKIPATHWAYS_URL = "https://www.wikipathways.org/wikipathways-assets/pathways/{wp}/{wp}.{ext}"
 
-# Excel input file containing Orphacodes column
-EXCEL_FILE = os.path.join(INPUT_DIR, "cnv_data.xlsx")
+TIMEOUT = 300
 
-def ensure_dirs():
-    os.makedirs(DATA_PROCESSED_DIR, exist_ok=True)
-    os.makedirs(DATA_LATEST_DIR, exist_ok=True)
-    os.makedirs(INPUT_DIR, exist_ok=True)
+HGNC_COLUMNS = ["hgnc_id", "symbol", "name", "entrez_id", "ensembl_gene_id", "uniprot_ids",
+                "omim_id", "locus_group", "prev_symbol", "alias_symbol"]
 
-# Extract orphacodes
-def load_orphacodes_from_excel():
-    df = pd.read_excel(EXCEL_FILE, engine='openpyxl')
-    orphacodes = set()
-    pattern = re.compile(r"^(\d+)") 
+FREQUENCIES = {
+    "Obligate (100%)": "Phenotypes_Obligate(100%)",
+    "Very frequent (99-80%)": "Phenotypes_Very_frequent(99-80%)",
+    "Frequent (79-30%)": "Phenotypes_Frequent(79-30%)",
+    "Occasional (29-5%)": "Phenotypes_Occasional(29-5%)",
+    "Very rare (<4-1%)": "Phenotypes_Very_rare(<4-1%)",
+    "Excluded (0%)": "Phenotypes_Excluded(0%)",
+}
 
-    for entry in df['orphacodes'].dropna():
-        parts = [code.strip() for code in str(entry).split(",")]
-        for part in parts:
-            match = pattern.match(part)
-            if match:
-                orphacodes.add(match.group(1))
-    return orphacodes
+# GPML node types that are genes or gene products
+GENE_NODE_TYPES = {"GeneProduct", "Protein", "Rna"}
 
-# Orphadata parsing functions
+# GPML xref database name -> HGNC column used for the mapping
+XREF_TO_HGNC_COLUMN = {
+    "ensembl": "ensembl_gene_id",
+    "entrez gene": "entrez_id",
+    "ncbi gene": "entrez_id",
+    "hgnc": "symbol",
+    "hgnc accession": "hgnc_id",
+    "uniprot-trembl": "uniprot_ids",
+    "uniprot-swissprot": "uniprot_ids",
+    "uniprot": "uniprot_ids",
+}
+
+
+def download(url, path):
+    print(f"Downloading {url}")
+    with requests.get(url, stream=True, timeout=TIMEOUT) as response:
+        response.raise_for_status()
+        with open(path, "wb") as f:
+            for chunk in response.iter_content(chunk_size=1 << 20):
+                f.write(chunk)
+
+
+def sha256(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+# Release detection
+
+def orphadata_release(url):
+    """Return the JDBOR date and version from the start of an Orphadata XML file."""
+    response = requests.get(url, headers={"Range": "bytes=0-1023"}, timeout=TIMEOUT)
+    response.raise_for_status()
+    match = re.search(r'<JDBOR date="([^"]+)" version="([^"]+)"', response.text)
+    if not match:
+        raise ValueError(f"No JDBOR release information in {url}")
+    return {"release_date": match.group(1), "version": match.group(2)}
+
+
+def hgnc_release():
+    response = requests.head(HGNC_URL, timeout=TIMEOUT)
+    response.raise_for_status()
+    return {"last_modified": response.headers.get("Last-Modified", ""),
+            "etag": response.headers.get("ETag", "").strip('"')}
+
+
+def wikipathways_release(gpml_path):
+    """Return the revision and last-modified attributes of a GPML file."""
+    root = ET.parse(gpml_path).getroot()
+    return {"revision": root.get("Version", ""), "last_modified": root.get("Last-Modified", "")}
+
+
+def release_ids(sources):
+    """Return only the release identifiers of a sources record, for comparison."""
+    return {"orphadata": {k: v.get("release_date") for k, v in sources.get("orphadata", {}).items()},
+            "hgnc": sources.get("hgnc", {}).get("etag"),
+            "wikipathways": {k: v.get("revision") for k, v in sources.get("wikipathways", {}).items()}}
+
+
+def load_previous_sources():
+    path = LATEST_DIR / "sources.json"
+    return json.loads(path.read_text()) if path.exists() else {}
+
+
+# Orphadata parsing
+
 def parse_definitions(path, orphacodes):
-    root = ET.parse(path).getroot()
+    """Return {orphacode: {name, definition, omim}} from Orphadata product 1."""
     data = {}
-    for disorder in root.findall(".//Disorder"):
+    for disorder in ET.parse(path).getroot().iter("Disorder"):
         code = disorder.findtext("OrphaCode")
-        if code in orphacodes:
-            definition = ""
-            for summary_info in disorder.findall("SummaryInformationList/SummaryInformation"):
-                lang = summary_info.attrib.get("lang", "")
-                if lang == "en":
-                    for text_section in summary_info.findall("TextSectionList/TextSection"):
-                        section_type = text_section.find("TextSectionType/Name[@lang='en']")
-                        if section_type is not None and section_type.text == "Definition":
-                            contents = text_section.findtext("Contents")
-                            if contents:
-                                definition = contents.strip()
-                                break
-                if definition:
-                    break
-            data[code] = definition
+        if code not in orphacodes:
+            continue
+        definition = ""
+        for section in disorder.findall("SummaryInformationList/SummaryInformation[@lang='en']"
+                                        "/TextSectionList/TextSection"):
+            if section.findtext("TextSectionType/Name[@lang='en']") == "Definition":
+                definition = (section.findtext("Contents") or "").strip()
+                break
+        omim = [ref.findtext("Reference") for ref in disorder.findall("ExternalReferenceList/ExternalReference")
+                if ref.findtext("Source") == "OMIM" and ref.findtext("Reference")]
+        data[code] = {"name": disorder.findtext("Name[@lang='en']") or "",
+                      "definition": definition, "omim": omim}
     return data
 
 
 def parse_phenotypes(path, orphacodes):
-    # Take the obligate, very freq, freq, and occasional phenotypes
-    freq_map = {
-        "Obligate (100%)": "obligate",
-        "Very frequent (99-80%)": "very_frequent",
-        "Frequent (79-30%)": "frequent",
-        "Occasional (29-5%)": "occasional", 
-        "Very rare (<4-1%)": "very_rare", 
-        "Excluded (0%)": "excluded"
-    }
-
-    root = ET.parse(path).getroot()
-    phenos = defaultdict(lambda: {"obligate": [], "very_frequent": [], "frequent": [], "occasional": [], "very_rare": [], "excluded": []})
-
-    for disorder in root.findall(".//Disorder"):
+    """Return {orphacode: {frequency column: ['term (HP:id)', ...]}} from Orphadata product 4."""
+    phenotypes = defaultdict(lambda: defaultdict(list))
+    for disorder in ET.parse(path).getroot().iter("Disorder"):
         code = disorder.findtext("OrphaCode")
         if code not in orphacodes:
             continue
+        for assoc in disorder.findall("HPODisorderAssociationList/HPODisorderAssociation"):
+            column = FREQUENCIES.get(assoc.findtext("HPOFrequency/Name[@lang='en']"))
+            term = assoc.findtext("HPO/HPOTerm")
+            hpo_id = assoc.findtext("HPO/HPOId")
+            if column and term and hpo_id:
+                phenotypes[code][column].append(f"{term} ({hpo_id})")
+    return phenotypes
 
-        assoc_list = disorder.find("HPODisorderAssociationList")
-        if assoc_list is None:
-            continue
-
-        for assoc in assoc_list.findall("HPODisorderAssociation"):
-            freq_name = assoc.findtext("HPOFrequency/Name[@lang='en']")
-            category = freq_map.get(freq_name)
-            if category:
-                hpo_term = assoc.findtext("HPO/HPOTerm") or ""
-                hpo_id = assoc.findtext("HPO/HPOId") or ""
-                if hpo_term and hpo_id:
-                    phenos[code][category].append(f"{hpo_term} ({hpo_id})")
-
-    return phenos
 
 def parse_prevalence(path, orphacodes):
-    root = ET.parse(path).getroot()
-    prevalence = {}
-    prevalence_source = defaultdict(list)
-    pmid_pattern = re.compile(r'(\d+)\[PMID\]')
-
-    for code in orphacodes:
-        disorder = root.find(f".//Disorder[OrphaCode='{code}']")
-        if disorder is None:
-            prevalence[code] = "Unknown"
+    """Return {orphacode: (class, [pmid, ...])} with the first worldwide prevalence class."""
+    prevalence = {code: ("Unknown", []) for code in orphacodes}
+    for disorder in ET.parse(path).getroot().iter("Disorder"):
+        code = disorder.findtext("OrphaCode")
+        if code not in orphacodes:
             continue
-
-        found_worldwide = False  # Track whether a valid entry was found
-
         for prev in disorder.findall("PrevalenceList/Prevalence"):
             geo = prev.findtext("PrevalenceGeographic/Name[@lang='en']")
             class_ = prev.findtext("PrevalenceClass/Name[@lang='en']")
-            source_text = prev.findtext("Source") or ""
+            if geo == "Worldwide" and class_:
+                pmids = re.findall(r"(\d+)\[PMID\]", prev.findtext("Source") or "")
+                prevalence[code] = (class_, pmids)
+                break
+    return prevalence
 
-            if geo != "Worldwide" or not class_:
-                continue
 
-            prevalence[code] = class_
-            found_worldwide = True
+def build_orphadata_table(tmp, orphacodes):
+    definitions = parse_definitions(tmp / "definitions.xml", orphacodes)
+    phenotypes = parse_phenotypes(tmp / "phenotypes.xml", orphacodes)
+    prevalence = parse_prevalence(tmp / "prevalence.xml", orphacodes)
 
-            pmids = pmid_pattern.findall(source_text)
-            prevalence_source[code].extend(pmids)
-            break  # stop after the first valid Worldwide entry
-
-        if not found_worldwide:
-            prevalence[code] = "Unknown"
-
-    return prevalence, prevalence_source
-
-def parse_omim(path, orphacodes):
-    root = ET.parse(path).getroot()
-    omim_map = defaultdict(list)
-    for disorder in root.findall(".//Disorder"):
-        code = disorder.findtext("OrphaCode")
-        if code not in orphacodes:
-            continue
-        ext_refs = disorder.find("ExternalReferenceList")
-        if ext_refs is None:
-            continue
-        for ext_ref in ext_refs.findall("ExternalReference"):
-            source = ext_ref.findtext("Source")
-            ref = ext_ref.findtext("Reference")
-            if source == "OMIM" and ref:
-                omim_map[code].append(ref)
-    return omim_map
-
-def save_combined_csv(defs, phenos, prevalence, prevalence_source, omims, orphacodes, output_path):
     rows = []
-    for code in orphacodes:
-        phenotypes = phenos.get(code, {"obligate": [], "very_frequent": [], "frequent": [], "occasional": [], "very_rare": [], "excluded": []})
-        rows.append({
-            "OrphaCode": code,
-            "Definition": defs.get(code, ""),
-            "Phenotypes_Obligate(100%)": "; ".join(phenotypes["obligate"]),
-            "Phenotypes_Very_frequent(99-80%)": "; ".join(phenotypes["very_frequent"]),
-            "Phenotypes_Frequent(79-30%)": "; ".join(phenotypes["frequent"]),
-            "Phenotypes_Occasional(29-5%)": "; ".join(phenotypes["occasional"]),
-            "Phenotypes_Very_rare(<4-1%)": "; ".join(phenotypes["very_rare"]),
-            "Phenotypes_Excluded(0%)": "; ".join(phenotypes["excluded"]),
-            "Prevalence": prevalence.get(code, ""),
-            "Prevalence_pmid": ", ".join(prevalence_source.get(code, [])),
-            "OMIM": "; ".join(omims.get(code, []))
-        })
-    df = pd.DataFrame(rows)
-    df.to_csv(output_path, index=False)
+    for code in sorted(orphacodes, key=int):
+        if code not in definitions:
+            print(f"[WARN] ORPHA:{code} is not in the Orphadata release")
+        info = definitions.get(code, {"name": "", "definition": "", "omim": []})
+        prev_class, prev_pmids = prevalence[code]
+        row = {"OrphaCode": code, "Name": info["name"], "Definition": info["definition"]}
+        row.update({column: "; ".join(phenotypes[code][column]) for column in FREQUENCIES.values()})
+        row.update({"Prevalence": prev_class, "Prevalence_pmid": ", ".join(prev_pmids),
+                    "OMIM": "; ".join(info["omim"])})
+        rows.append(row)
+    return pd.DataFrame(rows)
 
-# HGNC download and processing
-def download_hgnc(tmpdir):
-    print(f"Downloading HGNC file from {HGNC_URL}...")
-    r = requests.get(HGNC_URL)
-    r.raise_for_status()
-    hgnc_path = os.path.join(tmpdir, "hgnc_complete_set.txt")
-    with open(hgnc_path, "wb") as f:
-        f.write(r.content)
-    return hgnc_path
 
-def filter_hgnc(hgnc_path):
-    df = pd.read_csv(hgnc_path, sep="\t", dtype=str)
-    columns_of_interest = [
-        "hgnc_id",
-        "symbol",
-        "name",
-        "entrez_id",
-        "ensembl_gene_id",
-        "uniprot_ids",
-        "locus_group",
-    ]
-    return df[columns_of_interest].copy()
+# HGNC mapping
 
-def save_hgnc(filtered_df, output_path):
-    filtered_df.to_csv(output_path, sep="\t", index=False)
+def load_hgnc(path):
+    df = pd.read_csv(path, sep="\t", dtype=str, keep_default_na=False, low_memory=False)
+    return df[HGNC_COLUMNS]
 
-# Utility functions
-def write_version_file(version):
-    with open(VERSION_FILE, "w") as f:
-        f.write(version)
 
-def update_symlink(src_path, symlink_dir):
-    os.makedirs(symlink_dir, exist_ok=True)
+def resolve_symbols(df_input, hgnc):
+    """Map each input gene symbol to an approved HGNC symbol.
 
-    # Make both paths absolute first
-    src_path = os.path.abspath(src_path)
-    symlink_dir = os.path.abspath(symlink_dir)
-    symlink_path = os.path.join(symlink_dir, os.path.basename(src_path))
+    The order is: approved symbol, then a unique previous symbol, then a unique alias symbol.
+    """
+    approved = dict(zip(hgnc["symbol"], hgnc["hgnc_id"]))
+    lookup = {"previous": defaultdict(set), "alias": defaultdict(set)}
+    for kind, column in (("previous", "prev_symbol"), ("alias", "alias_symbol")):
+        for symbols, approved_symbol in zip(hgnc[column], hgnc["symbol"]):
+            for symbol in filter(None, symbols.split("|")):
+                lookup[kind][symbol].add(approved_symbol)
 
-    # Compute relative path
-    relative_src = os.path.relpath(src_path, symlink_dir)
+    rows = []
+    for _, cnv in df_input.iterrows():
+        for symbol in split_list(cnv["genes"]):
+            match_type, approved_symbol = "not_found", ""
+            if symbol in approved:
+                match_type, approved_symbol = "approved", symbol
+            else:
+                for kind in ("previous", "alias"):
+                    candidates = lookup[kind][symbol]
+                    if len(candidates) == 1:
+                        match_type, approved_symbol = kind, next(iter(candidates))
+                        break
+                    if len(candidates) > 1:
+                        match_type = f"{kind}_ambiguous"
+                        break
+            rows.append({"cnv": cnv_key(cnv), "input_symbol": symbol, "match_type": match_type,
+                         "symbol": approved_symbol, "hgnc_id": approved.get(approved_symbol, "")})
+    return pd.DataFrame(rows)
 
-    if os.path.islink(symlink_path) or os.path.exists(symlink_path):
-        os.remove(symlink_path)
 
-    os.symlink(relative_src, symlink_path)
+# WikiPathways
 
-def clean_latest_dir():
-    for filename in os.listdir(DATA_LATEST_DIR):
-        path = os.path.join(DATA_LATEST_DIR, filename)
-        if os.path.islink(path) or os.path.isfile(path):
-            os.remove(path)
+def build_xref_index(hgnc):
+    """Return {hgnc column: {identifier: set(hgnc_id)}} for the xref columns used in GPML."""
+    index = {}
+    for column in set(XREF_TO_HGNC_COLUMN.values()):
+        mapping = defaultdict(set)
+        for value, hgnc_id in zip(hgnc[column], hgnc["hgnc_id"]):
+            for identifier in filter(None, value.split("|")):
+                mapping[identifier].add(hgnc_id)
+        index[column] = mapping
+    return index
 
-def clean_processed_dir():
-    for filename in os.listdir(DATA_PROCESSED_DIR):
-        path = os.path.join(DATA_PROCESSED_DIR, filename)
-        if os.path.islink(path) or os.path.isfile(path):
-            os.remove(path)
 
-# Main 
+def attr(element, *names):
+    """Return the first attribute value found. GPML 2013a and GPML 2021 use different names."""
+    for name in names:
+        if element.get(name):
+            return element.get(name)
+    return ""
+
+
+def parse_pathway_genes(wp_id, gpml_path, index, hgnc_by_id):
+    """Return one row per gene node in the pathway, with the HGNC gene when the xref maps to one gene."""
+    rows = []
+    for node in ET.parse(gpml_path).getroot().iter():
+        if not node.tag.endswith("DataNode") or attr(node, "Type", "type") not in GENE_NODE_TYPES:
+            continue
+        xref = next((child for child in node if child.tag.endswith("Xref")), None)
+        database = attr(xref, "Database", "dataSource") if xref is not None else ""
+        identifier = attr(xref, "ID", "identifier") if xref is not None else ""
+        column = XREF_TO_HGNC_COLUMN.get(database.lower())
+        if column == "hgnc_id" and identifier and not identifier.startswith("HGNC:"):
+            identifier = f"HGNC:{identifier}"
+        label = attr(node, "TextLabel", "textLabel")
+        hits = index[column].get(identifier, set()) if column else set()
+        hgnc_id, mapped_by = (next(iter(hits)), "xref") if len(hits) == 1 else ("", "")
+        # When the xref does not map to one gene, use the label only when it is an approved symbol
+        if not hgnc_id and len(index["symbol"].get(label, set())) == 1:
+            hgnc_id, mapped_by = next(iter(index["symbol"][label])), "label"
+        gene = hgnc_by_id.get(hgnc_id, {})
+        rows.append({"wikipathways_id": wp_id, "label": label, "xref_database": database,
+                     "xref_id": identifier, "hgnc_id": hgnc_id, "symbol": gene.get("symbol", ""),
+                     "locus_group": gene.get("locus_group", ""), "mapped_by": mapped_by})
+    return rows
+
+
+# Output
+
+def write_outputs(out_dir, tables, pathway_files, sources):
+    for name, df in tables.items():
+        sep = "," if name.endswith(".csv") else "\t"
+        df.to_csv(out_dir / name, sep=sep, index=False, lineterminator="\n")
+    (out_dir / "pathways").mkdir()
+    for path in pathway_files:
+        shutil.copy(path, out_dir / "pathways" / path.name)
+    (out_dir / "sources.json").write_text(json.dumps(sources, indent=2) + "\n")
+
+
+def files_equal(new_dir, tables):
+    """Return True when the new tables and pathway files are equal to the latest data."""
+    for name in tables:
+        stem, ext = name.rsplit(".", 1)
+        latest = sorted(LATEST_DIR.glob(f"{stem}_*.{ext}"))
+        if not latest or latest[-1].read_bytes() != (new_dir / name).read_bytes():
+            return False
+    new_pathways = {p.name: p.read_bytes() for p in (new_dir / "pathways").iterdir()}
+    old_pathways = {p.name: p.read_bytes() for p in PATHWAYS_DIR.glob("*")}
+    return new_pathways == old_pathways
+
+
+def publish(new_dir, tables, today):
+    """Write the new version to data/processed, data/latest, data/pathways and version.txt."""
+    for directory in (PROCESSED_DIR, LATEST_DIR):
+        directory.mkdir(parents=True, exist_ok=True)
+        for path in directory.iterdir():
+            if path.is_file() or path.is_symlink():
+                path.unlink()
+
+    for name in list(tables) + ["sources.json"]:
+        stem, ext = name.rsplit(".", 1)
+        target = PROCESSED_DIR / f"{stem}_{today}.{ext}"
+        shutil.copy(new_dir / name, target)
+        link = LATEST_DIR / ("sources.json" if name == "sources.json" else target.name)
+        link.symlink_to(Path("..") / "processed" / target.name)
+
+    shutil.rmtree(PATHWAYS_DIR, ignore_errors=True)
+    shutil.copytree(new_dir / "pathways", PATHWAYS_DIR)
+    VERSION_FILE.write_text(f"v_{today}")
+
+
 def main():
-    ensure_dirs()
-    orphacodes = load_orphacodes_from_excel()
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--force", action="store_true",
+                        help="process the data and write a new version also when nothing is changed")
+    args = parser.parse_args()
 
-    with tempfile.TemporaryDirectory() as tmpdir:
-        print(f"Using temporary directory: {tmpdir}")
+    df_input = load_input()
+    errors, warnings = validate(df_input)
+    report(errors, warnings)
+    if errors:
+        sys.exit("Input validation failed. Correct data/input/cnv_data.tsv.")
 
-        # Download Orphadata files
+    orphacodes = {code for value in df_input["orphacodes"] for code, _ in parse_orphacodes(value)}
+    wp_ids = sorted({wp for wp in df_input["wikipathways_id"] if wp})
+    previous = load_previous_sources()
+    input_changed = previous.get("input_sha256") != sha256(INPUT_FILE)
+
+    with tempfile.TemporaryDirectory() as tmp_name:
+        tmp = Path(tmp_name)
+
+        releases = {"orphadata": {name: orphadata_release(url) for name, url in ORPHADATA_FILES.items()},
+                    "hgnc": hgnc_release(), "wikipathways": {}}
+        pathway_files = []
+        for wp in wp_ids:
+            for ext in ("gpml", "svg"):
+                download(WIKIPATHWAYS_URL.format(wp=wp, ext=ext), tmp / f"{wp}.{ext}")
+                pathway_files.append(tmp / f"{wp}.{ext}")
+            releases["wikipathways"][wp] = wikipathways_release(tmp / f"{wp}.gpml")
+
+        if release_ids(releases) == release_ids(previous) and not input_changed and not args.force:
+            print("No new source release and no input change. Data is not changed.")
+            return
+
         for name, url in ORPHADATA_FILES.items():
-            out_path = os.path.join(tmpdir, f"{name}.xml")
-            print(f"Downloading Orphadata {name}...")
-            r = requests.get(url)
-            r.raise_for_status()
-            with open(out_path, "wb") as f:
-                f.write(r.content)
+            download(url, tmp / f"{name}.xml")
+            releases["orphadata"][name].update({"url": url, "sha256": sha256(tmp / f"{name}.xml")})
+        download(HGNC_URL, tmp / "hgnc.txt")
+        releases["hgnc"].update({"url": HGNC_URL, "sha256": sha256(tmp / "hgnc.txt")})
+        for wp in wp_ids:
+            releases["wikipathways"][wp]["url"] = WIKIPATHWAYS_URL.format(wp=wp, ext="gpml")
 
-        # Parse Orphadata files
-        def_path = os.path.join(tmpdir, "definitions.xml")
-        defs = parse_definitions(def_path, orphacodes)
-        omims = parse_omim(def_path, orphacodes)
-        phenos = parse_phenotypes(os.path.join(tmpdir, "phenotypes.xml"), orphacodes)
-        prevalence, prevalence_source = parse_prevalence(os.path.join(tmpdir, "prevalence.xml"), orphacodes)
+        orphadata = build_orphadata_table(tmp, orphacodes)
+        hgnc = load_hgnc(tmp / "hgnc.txt")
+        gene_mapping = resolve_symbols(df_input, hgnc)
+        for _, row in gene_mapping[gene_mapping["match_type"] != "approved"].iterrows():
+            print(f"[WARN] {row['cnv']}: gene '{row['input_symbol']}' -> {row['match_type']} {row['symbol']}")
 
+        index = build_xref_index(hgnc)
+        hgnc_by_id = hgnc.set_index("hgnc_id", drop=False).to_dict("index")
+        pathway_genes = pd.DataFrame(
+            [row for wp in wp_ids for row in parse_pathway_genes(wp, tmp / f"{wp}.gpml", index, hgnc_by_id)])
 
-        # Download and filter HGNC
-        hgnc_path = download_hgnc(tmpdir)
-        filtered_hgnc = filter_hgnc(hgnc_path)
+        used_ids = (set(gene_mapping["hgnc_id"]) | set(pathway_genes["hgnc_id"])) - {""}
+        hgnc_subset = hgnc[hgnc["hgnc_id"].isin(used_ids)].sort_values(
+            "hgnc_id", key=lambda ids: ids.str[5:].astype(int))
 
-    today = datetime.datetime.now().strftime("%Y-%m-%d")
+        tables = {"orphadata_filtered.csv": orphadata, "hgnc_filtered.tsv": hgnc_subset,
+                  "gene_mapping.tsv": gene_mapping, "pathway_genes.tsv": pathway_genes}
 
-    # Clean previous versions in the /processed folder
-    clean_processed_dir()
+        new_dir = tmp / "out"
+        new_dir.mkdir()
+        sources = {"retrieved": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
+                   "input_sha256": sha256(INPUT_FILE), **releases}
+        write_outputs(new_dir, tables, pathway_files, sources)
 
-    # Save Orphadata processed CSV
-    csv_path = os.path.join(DATA_PROCESSED_DIR, f"orphadata_filtered_{today}.csv")
-    save_combined_csv(defs, phenos, prevalence, prevalence_source, omims, orphacodes, csv_path)
+        if files_equal(new_dir, tables) and not args.force:
+            print("Processed data is not changed. No new version.")
+            return
 
-    # Save HGNC TSV
-    hgnc_out_path = os.path.join(DATA_PROCESSED_DIR, f"hgnc_filtered_{today}.csv")
-    save_hgnc(filtered_hgnc, hgnc_out_path)
+        today = datetime.date.today().isoformat()
+        publish(new_dir, tables, today)
 
-    # Clean previous versions in the /latest folder
-    clean_latest_dir()
+    print(f"Update complete. Version: v_{today}")
 
-    # Update latest symlinks
-    update_symlink(csv_path, DATA_LATEST_DIR)
-    update_symlink(hgnc_out_path, DATA_LATEST_DIR)
-
-    # Save version
-    write_version_file("v_" + today)
-
-    print("Update complete!")
-    print(f"Version: {today}")
-    print(f"Processed files saved to {DATA_PROCESSED_DIR}")
-    print(f"Latest symlinks updated in {DATA_LATEST_DIR}")
 
 if __name__ == "__main__":
     main()
