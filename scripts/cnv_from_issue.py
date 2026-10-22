@@ -12,6 +12,7 @@ import re
 import sys
 
 from cnv_input import COLUMNS, INPUT_FILE, cnv_key, load_input
+from check_sources import check_row
 from validate_input import validate
 
 # Issue form label -> input column
@@ -51,12 +52,14 @@ def normalize(column, value):
     return " ".join(value.split())
 
 
-def write_report(path, title, row, old, errors, warnings):
+def write_report(path, title, row, old, errors, warnings, notes=()):
     lines = [f"## {title}", "", "| Column | Value |", "|---|---|"]
     for c in COLUMNS:
         value = row[c] if old is None or old[c] == row[c] else f"~~{old[c]}~~ → **{row[c] or '(empty)'}**"
         lines.append(f"| `{c}` | {value.replace('|', '&#124;')} |")
     lines += [""] + [f"- :x: {m}" for m in errors] + [f"- :warning: {m}" for m in warnings]
+    if notes:
+        lines += ["", "Found in the sources:"] + [f"- {m}" for m in notes]
     lines += ["", "The check failed. Edit the issue to correct the errors." if errors
               else "The check passed. A pull request changes `data/input/cnv_data.tsv`."]
     with open(path, "w", encoding="utf-8") as f:
@@ -99,7 +102,10 @@ def main():
     errors, warnings = ([m for m in messages if m.startswith(f"{key}:")] for messages in validate(df))
     if len(df) <= index or df.iloc[index].to_dict() != row:
         errors.append(f"{key}: the row is not read back with the same values. Remove quote characters and try again.")
-    write_report(report_path, title, row, old, errors, warnings)
+    source_errors, source_warnings, notes = check_row(row)
+    errors += source_errors
+    warnings += source_warnings
+    write_report(report_path, title, row, old, errors, warnings, notes)
 
     if "GITHUB_OUTPUT" in os.environ:
         with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:

@@ -47,6 +47,12 @@ Open a [new issue](../../issues/new/choose) and select one of these forms:
 
 The workflow [cnv-issue.yml](.github/workflows/cnv-issue.yml) runs [cnv_from_issue.py](scripts/cnv_from_issue.py). It:
 1. adds or edits the row in `data/input/cnv_data.tsv` and checks it with `validate_input.py`,
+   and with [check_sources.py](scripts/check_sources.py) against the online sources:
+   - locus and regions: same chromosome, region in the chromosome, region overlaps the bands of the locus (UCSC cytoBand, hg19 and hg38)
+   - WikiPathways ID exists and the pathway name is the WikiPathways title
+   - each ORPHAcode is in Orphadata
+   - each gene is an approved HGNC symbol on the CNV chromosome
+   - each PubMed ID exists
 2. writes the result as a comment on the issue (an edit shows the old and the new value),
 3. when the check passes, opens a pull request from the branch `cnv/issue-<number>`.
 
